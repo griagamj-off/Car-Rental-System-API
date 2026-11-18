@@ -1,0 +1,309 @@
+{
+  "info": {
+    "_postman_id": "9204e62d-3d4d-45a1-9ae3-4725e9436f2a",
+    "name": "Car Rental System API",
+    "description": "End-to-end demo of SQL functions, stored procedures, business transactions, and error handling.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8000" },
+    { "key": "customerId", "value": "1" },
+    { "key": "carId", "value": "1" },
+    { "key": "cancelCarId", "value": "2" },
+    { "key": "rentalId", "value": "" },
+    { "key": "cancelRentalId", "value": "" },
+    { "key": "startDate", "value": "2030-04-10" },
+    { "key": "endDate", "value": "2030-04-12" },
+    { "key": "returnDate", "value": "2030-04-12" }
+  ],
+  "item": [
+    {
+      "name": "1. Quote - SQL Functions",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/rentals/quote?car_id={{carId}}&start_date={{startDate}}&end_date={{endDate}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Quote uses database functions successfully', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.rental_days).to.eql(3);",
+              "  pm.expect(Number(body.total_cost)).to.eql(165);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Book rental - Stored Procedure",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer_id\": {{customerId}},\n  \"car_id\": {{carId}},\n  \"start_date\": \"{{startDate}}\",\n  \"end_date\": \"{{endDate}}\"\n}"
+        },
+        "url": "{{baseUrl}}/rentals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Booking was created by the database procedure', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('booked');",
+              "pm.collectionVariables.set('rentalId', body.rental_id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Reject overlapping booking",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer_id\": {{customerId}},\n  \"car_id\": {{carId}},\n  \"start_date\": \"{{startDate}}\",\n  \"end_date\": \"{{endDate}}\"\n}"
+        },
+        "url": "{{baseUrl}}/rentals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Overlapping reservation is rejected', function () {",
+              "  pm.response.to.have.status(409);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Invalid date - Reject booking",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer_id\": {{customerId}},\n  \"car_id\": {{cancelCarId}},\n  \"start_date\": \"2030-04-12\",\n  \"end_date\": \"2030-04-10\"\n}"
+        },
+        "url": "{{baseUrl}}/rentals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Invalid date range is rejected by database logic', function () {",
+              "  pm.response.to.have.status(400);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Invalid return method - Transaction rollback",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"return_date\": \"{{returnDate}}\",\n  \"payment_method\": \"crypto\"\n}"
+        },
+        "url": "{{baseUrl}}/rentals/{{rentalId}}/return"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Invalid payment is rejected without partial update', function () {",
+              "  pm.response.to.have.status(400);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Verify failed transaction left rental booked",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/rentals/{{rentalId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Failed return did not update rental or create payment', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('booked');",
+              "  pm.expect(body.payment_id).to.eql(null);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Return car - Commit payment transaction",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"return_date\": \"{{returnDate}}\",\n  \"payment_method\": \"card\"\n}"
+        },
+        "url": "{{baseUrl}}/rentals/{{rentalId}}/return"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Return procedure completes rental and records payment', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('completed');",
+              "  pm.expect(body.payment_id).to.be.a('number');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Verify committed database records",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/rentals/{{rentalId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Rental and payment records are persisted', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('completed');",
+              "  pm.expect(Number(body.paid_amount)).to.eql(165);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Customer spending - SQL Function",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/customers/{{customerId}}/spending"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Customer spending is calculated by database function', function () {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(Number(pm.response.json().total_spent)).to.be.at.least(165);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Book separate rental for cancellation demo",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer_id\": {{customerId}},\n  \"car_id\": {{cancelCarId}},\n  \"start_date\": \"2030-05-10\",\n  \"end_date\": \"2030-05-11\"\n}"
+        },
+        "url": "{{baseUrl}}/rentals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Second rental is created', function () {",
+              "  pm.response.to.have.status(201);",
+              "  pm.collectionVariables.set('cancelRentalId', pm.response.json().rental_id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Cancel rental - Stored Procedure",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/rentals/{{cancelRentalId}}/cancel"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Cancellation procedure updates rental status', function () {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().status).to.eql('cancelled');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Reject cancellation of completed rental",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/rentals/{{rentalId}}/cancel"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Completed rental cannot be cancelled', function () {",
+              "  pm.response.to.have.status(409);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
